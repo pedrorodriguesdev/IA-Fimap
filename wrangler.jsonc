@@ -1,21 +1,25 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "back-end-fimap",
+  "name": "ia-fimap",
+  "account_id": "df0bc11d766a531bc460d6264e3a76dc",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-11",
   "workers_dev": true,
   "preview_urls": false,
-  "main": "src/index.ts",
-  "compatibility_date": "2026-10-21",
-  "ai": {
-    "binding": "AI"
+  "ai": { "binding": "AI", "remote": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/v1/*", "/chat", "/health", "/Pluggy.html"],
+    "not_found_handling": "404-page"
   },
   "ratelimits": [
     {
       "name": "CHAT_RATE_LIMITER",
-      "namespace_id": "73918426",
-      "simple": {
-        "limit": 12,
-        "period": 60
-      }
+      "namespace_id": "91374820",
+      "simple": { "limit": 12, "period": 60 }
     }
-  ]
+  ],
+  "vars": { "FINANCIAL_TOOLS_ENABLED": "true" },
+  "observability": { "enabled": true }
 }

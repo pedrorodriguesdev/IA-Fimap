@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fa">
+  <meta name="description" content="Converse com a Fimap AI para entender suas finanças, planejar suas metas e tomar decisões com mais clareza.">
+  <title>Fimap AI · Seu próximo passo começa aqui</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/ai-chat.css">
+  <link rel="stylesheet" href="/assets/vendor/highlight.css">
+  <script defer src="/config.js"></script>
+  <script defer src="/assets/vendor/marked.js"></script>
+  <script defer src="/assets/vendor/purify.js"></script>
+  <script defer src="/assets/vendor/highlight.js"></script>
+  <script defer src="/assets/ai-renderer.js"></script>
+  <script defer src="/assets/chat.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#mensagem">Ir para a conversa</a>
+  <aside class="sidebar" aria-label="Fimap AI">
+    <a class="brand" href="/" aria-label="Fimap AI, início"><span class="brand-mark">f<span>↗</span></span>fimap<span class="brand-ai">AI</span></a>
+    <button id="nova-conversa" class="new-chat" type="button"><span aria-hidden="true">＋</span> Nova conversa <span class="key-hint">N</span></button>
+    <div class="nav-label">SEU ESPAÇO</div>
+    <div class="nav-active"><span aria-hidden="true">✧</span> Assistente financeira <span class="nav-dot"></span></div>
+    <div class="session-card"><span class="session-symbol" aria-hidden="true">↗</span><h2>Um passo de cada vez.</h2><p>Mais clareza para cuidar do seu dinheiro. Uma conversa para começar.</p><span class="session-tag">FEITO PARA VOCÊ</span></div>
+    <div class="sidebar-bottom"><span class="privacy-icon" aria-hidden="true">◇</span><div><strong>Esta conversa é temporária</strong><p>O histórico fica nesta aba.</p></div></div>
+    <button id="sobre" class="about-button" type="button">Sobre a Fimap AI <span aria-hidden="true">↗</span></button>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb"><span>Seu espaço</span><span aria-hidden="true">/</span><strong>Chat IA</strong></div><div class="header-actions"><span id="conexao" class="connection" role="status"><i></i><span>Verificando serviço…</span></span><button id="exportar" class="text-button" type="button" title="Baixar conversa em Markdown">↓ <span>Exportar</span></button></div></header>
+    <main class="main">
+      <section class="chat-heading"><div class="assistant-identity"><span class="assistant-icon" aria-hidden="true">✧</span><div><h1>Fimap AI <span>ASSISTENTE</span></h1><p>Seu dinheiro, com mais direção.</p></div></div><button id="nova-conversa-mobile" class="text-button mobile-new" type="button">＋ Nova conversa</button><span class="session-badge">CONVERSA TEMPORÁRIA</span></section>
+      <section class="chat-panel" aria-label="Conversa com a Fimap AI">
+        <div id="conversa" role="log" aria-label="Mensagens da conversa" aria-live="polite" aria-relevant="additions" tabindex="0">
+          <section id="boas-vindas" class="welcome">
+            <div class="welcome-mark" aria-hidden="true">✧<span></span></div>
+            <span class="eyebrow">MENOS DÚVIDAS. MAIS POSSIBILIDADES.</span>
+            <h2>Vamos dar clareza<br>às suas finanças?</h2>
+            <p>Organize suas ideias, entenda suas opções e planeje<br class="desktop-break"> o próximo passo. Pode perguntar.</p>
+            <div class="suggestion-grid" aria-label="Sugestões de perguntas">
+              <button class="suggestion" type="button" data-prompt="Quero organizar meu orçamento mensal. Quais informações você precisa para me ajudar?"><span class="suggestion-icon" aria-hidden="true">▤</span><strong>Organizar meu orçamento</strong><span>Encontre espaço para o que importa.</span><b aria-hidden="true">↗</b></button>
+              <button class="suggestion" type="button" data-prompt="Como começo a montar uma reserva de emergência?"><span class="suggestion-icon" aria-hidden="true">◇</span><strong>Criar minha reserva</strong><span>Um plano para ter mais tranquilidade.</span><b aria-hidden="true">↗</b></button>
+              <button class="suggestion" type="button" data-prompt="Explique a diferença entre juros simples e compostos com um exemplo hipotético."><span class="suggestion-icon" aria-hidden="true">↗</span><strong>Entender investimentos</strong><span>Aprenda com explicações simples.</span><b aria-hidden="true">↗</b></button>
+              <button class="suggestion" type="button" data-prompt="Quero planejar uma meta financeira. Por onde começo?"><span class="suggestion-icon" aria-hidden="true">◎</span><strong>Tirar uma meta do papel</strong><span>Transforme uma ideia em próximos passos.</span><b aria-hidden="true">↗</b></button>
+            </div>
+          </section>
+        </div>
+        <div class="composer-area"><div id="carregando" role="status" aria-live="polite"></div><div class="composer"><form id="formulario"><label class="sr-only" for="mensagem">Sua mensagem para a Fimap AI</label><textarea id="mensagem" rows="1" maxlength="2000" placeholder="O que vamos planejar hoje?" required></textarea><div class="composer-bottom"><span class="composer-note"><span aria-hidden="true">✧</span> Fimap AI <span class="input-hint">· Enter para enviar</span></span><div class="composer-actions"><span id="contador" aria-live="off">0 / 2000</span><button id="parar" type="button" hidden>■ Parar</button><button id="enviar" type="submit" aria-label="Enviar mensagem" title="Enviar mensagem">↑</button></div></div></form></div><p class="chat-disclaimer">A IA pode cometer erros. Confira informações importantes antes de decidir.</p></div>
+      </section>
+      <footer class="page-footer"><span>Mais clareza. Melhores escolhas.</span><span>Fimap <span id="ano"></span></span></footer>
+    </main>
+  </div>
+  <dialog id="sobre-dialog"><button id="fechar-sobre" class="dialog-close" type="button" aria-label="Fechar">×</button><span class="eyebrow">FIMAP AI</span><h2>Clareza para o seu próximo passo.</h2><p>A assistente ajuda a entender conceitos, organizar informações que você compartilhar e fazer simulações. Dados de mercado dependem da disponibilidade das fontes.</p><p>Este chat ainda não está conectado às suas contas nem ao histórico do aplicativo. Nenhuma operação financeira é executada.</p><p>A conversa fica apenas na memória desta aba e desaparece ao recarregar. Use “Exportar” se quiser guardar uma cópia.</p></dialog>
+</body>
+</html>

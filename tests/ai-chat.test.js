@@ -31,7 +31,7 @@
 
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { EventEmitter } = require('node:events')
+
 const service = require('../src/services/publicChatService')
 
 test('serviço propaga abort ao fetch e para o stream', async () => {
@@ -63,32 +63,11 @@ test('serviço preserva conteúdo SSE dividido entre pacotes', async () => {
   finally { global.fetch = original }
 })
 
-test('controller aborta geração quando navegador desconecta', async () => {
-  const geo = require('../src/services/geoapifyPlacesService')
-  const oldGeo = geo.respostaLugares
-  const oldGenerate = service.gerarResposta
-  const res = new EventEmitter()
-  Object.assign(res, { status() { return this }, set() { return this }, flushHeaders() {}, write() { throw Error('Não deve escrever após cancelar') }, end() { this.writableEnded = true } })
-  geo.respostaLugares = async () => null
-  let signal
-  service.gerarResposta = async (_messages, _onChunk, supplied) => {
-    signal = supplied
-    res.destroyed = true
-    res.emit('close')
-    supplied.throwIfAborted()
-  }
-  try {
-    await require('../src/controller/MensagemChat/PublicChatController').conversarPublicamente({ body: { messages: [{role: 'user', content: 'Oi'}] } }, res)
-    assert.equal(signal.aborted, true)
-    assert.equal(res.listenerCount('close'), 0)
-  } finally { geo.respostaLugares = oldGeo; service.gerarResposta = oldGenerate }
-})
-
 test('Worker cancela origem e aceita nova pergunta após cancelamento', async () => {
   const esbuild = require('esbuild')
   const vm = require('node:vm')
   const built = await esbuild.build({ entryPoints: ['src/index.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
-  const context = { module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
+  const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   vm.runInNewContext(built.outputFiles[0].text, context)
   const worker = context.module.exports.default
   let cancelled = false
@@ -108,7 +87,7 @@ test('Worker continua lendo eventos de raciocínio até chegar texto visível', 
   const esbuild = require('esbuild')
   const vm = require('node:vm')
   const built = await esbuild.build({ entryPoints: ['src/index.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
-  const context = { module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
+  const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   vm.runInNewContext(built.outputFiles[0].text, context)
   const packets = [
     { choices: [{ delta: { reasoning_content: 'intermediário' } }] },
@@ -130,7 +109,7 @@ test('Worker continua lendo eventos de raciocínio até chegar texto visível', 
 
 test('Worker da API responde sem binding de frontend', async () => {
   const built = await require('esbuild').build({ entryPoints: ['src/index.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
-  const context = { module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
+  const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   require('node:vm').runInNewContext(built.outputFiles[0].text, context)
   const worker = context.module.exports.default
   const health = await worker.fetch(new Request('https://test/health'), {})
@@ -152,7 +131,7 @@ test('atendimento Node usa a IA publicada por padrão', async () => {
   }
   try {
     assert.equal(await service.gerarResposta([], () => {}), 'Olá')
-    assert.equal(requestedUrl, 'https://back-end-fimap.pedroday813.workers.dev/chat')
+    assert.equal(requestedUrl, 'https://ia-fimap.fimap-agency.workers.dev/v1/ia/chat')
   } finally {
     global.fetch = originalFetch
     if (originalUrl === undefined) delete process.env.CLOUDFLARE_WORKER_URL
@@ -162,7 +141,7 @@ test('atendimento Node usa a IA publicada por padrão', async () => {
 
 test('site na nuvem entrega o chat, mas recusa Pluggy.html', async () => {
   const built = await require('esbuild').build({ entryPoints: ['src/testUiWorker.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
-  const context = { module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
+  const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   require('node:vm').runInNewContext(built.outputFiles[0].text, context)
   const worker = context.module.exports.default
   const env = { FINANCIAL_TOOLS_ENABLED: 'false', ASSETS: { fetch: async () => new Response('Página do chat') } }
@@ -174,13 +153,13 @@ test('site na nuvem entrega o chat, mas recusa Pluggy.html', async () => {
 
 test('Worker aceita o prompt FIMAP completo do backend e mantém limites de entrada', async () => {
   const built = await require('esbuild').build({ entryPoints: ['src/index.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
-  const context = { module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
+  const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   require('node:vm').runInNewContext(built.outputFiles[0].text, context)
   const worker = context.module.exports.default
   const systemPrompt = require('../src/ai-system-prompt.js')
   const presentationPrompt = require('../src/ai-presentation-prompt.js')
   const received = []
-  const env = { FINANCIAL_TOOLS_ENABLED: 'false',
+  const env = { FINANCIAL_TOOLS_ENABLED: 'false', CHAT_API_TOKEN: 'test-token',
     CHAT_RATE_LIMITER: { limit: async () => ({ success: true }) },
     AI: { run: async (_model, options) => {
       received.push(options.messages)
@@ -190,7 +169,7 @@ test('Worker aceita o prompt FIMAP completo do backend e mantém limites de entr
   let requestId = 0
   const send = (messages, path = '/chat') => worker.fetch(new Request(`https://test${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `prompt-${requestId++}` },
+    headers: { 'Authorization': 'Bearer test-token', 'Content-Type': 'application/json', 'CF-Connecting-IP': `prompt-${requestId++}` },
     body: JSON.stringify({ messages })
   }), env)
   assert.ok(systemPrompt.length > 2000)

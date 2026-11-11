@@ -1,46 +1,13 @@
-# Página de teste do FIMAP na Cloudflare
+# Interface web
 
-O chat é usado em https://back-end-fimap.pedroday813.workers.dev. A página envia as perguntas para a IA na Cloudflare; não é necessário ligar um atendimento da IA no computador.
+A interface agora é parte oficial do projeto e fica em `public/`. `npm run dev` abre o desenvolvimento; `npm run deploy` publica a interface e a IA juntas no Worker `ia-fimap`. Os aliases `ui:dev`, `ui:build` e `ui:deploy` apontam para os mesmos comandos.
 
-`frontend-test/` contém somente os arquivos da página: HTML, CSS e JavaScript do navegador. Os programas do servidor, Workers, arquivos Wrangler, dependências e `node_modules` ficam fora dela.
+A página consulta `/health` para indicar disponibilidade do serviço e faz perguntas em `/v1/ia/chat-publico` no próprio domínio. O indicador “Serviço disponível” confirma apenas o health check; “IA respondeu” aparece depois de uma resposta real concluída.
 
-## Publicar o chat
+Layout em `public/assets/app.css`, lógica em `public/assets/chat.js` e apresentação das respostas em `public/assets/ai-renderer.js` e `ai-chat.css`. Bibliotecas de Markdown, sanitização e destaque de código já estão em `public/assets/vendor/`; não há dependência de CDN no navegador.
 
-Na raiz, instale as dependências e publique:
+Histórico somente na memória da aba, com até cinco pares completos enviados como contexto. Cancelamentos, respostas vazias e falhas não entram no contexto. “Nova conversa” limpa o contexto; “Exportar” baixa uma cópia em Markdown. Enter envia e Shift+Enter adiciona uma linha.
 
-```bash
-npm install
-npm run ui:deploy
-```
+Os arquivos antigos estão preservados em `archive/`, incluindo `Pluggy.html`, que não é publicado. O arquivo não vazio em edição `src/app.js` também foi preservado: é um fragmento Express e não faz parte da entrada do Worker.
 
-Esse comando prepara os arquivos visuais e atualiza o Worker `back-end-fimap` da conta autenticada. A configuração está em `wrangler.frontend-test.jsonc`. Para publicar somente a API/IA, sem a página, use `npm run deploy`.
-
-`frontend-test/config.js` indica o endereço publicado para as perguntas. Os programas Node que consultam a IA usam o mesmo Worker por meio de `src/config/ia.js`. A variável `CLOUDFLARE_WORKER_URL` permite escolher outro Worker publicado.
-
-## Pluggy.html continua somente no computador
-
-Este arquivo foi preservado como estava: vazio. Ele não é enviado para a Cloudflare, conforme a regra em `frontend-test/.assetsignore`.
-
-Para abri-lo no computador:
-
-```bash
-npm run pluggy:serve
-```
-
-Abra o endereço mostrado no terminal. Esse programa entrega apenas `Pluggy.html`; ele não entrega o chat e não executa a IA. A porta pode ser escolhida com `PLUGGY_TEST_PORT`.
-
-## Arquivos de apoio
-
-- `src/index.ts`: programa principal da IA na Cloudflare.
-- `src/testUiWorker.ts`: entrega a página e encaminha as perguntas para a IA.
-- `scripts/prepare-test-ui.js`: prepara os arquivos visuais para a publicação.
-- `scripts/serve-pluggy.js`: abre somente a página Pluggy no computador.
-- `src/ai-presentation-prompt.js`: orienta a organização das respostas da IA.
-
-O programa Express e o banco das rotas financeiras são partes separadas do backend. Publicar o Worker do chat não publica essas outras rotas nem transfere o banco de dados para a Cloudflare.
-
-## Excluir a página
-
-Basta excluir `frontend-test/`. Os testes e a publicação normais da API/IA continuam funcionando. Os comandos opcionais `ui:*` e `pluggy:serve` dependem da pasta da página.
-
-Veja [ai-chat.md](ai-chat.md) para a apresentação das respostas e o cancelamento.
+A validação da interface usa `npm run test:browser`. Consulte [README](../README.md), [integração](backend-integration.md) e [validação](validation.md).

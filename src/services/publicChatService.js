@@ -1,65 +1,54 @@
-const TIMEOUT_IA_MS = 180000
+// Adaptador Node para copiar/importar no back-end separado. Não é executado pelo Worker.
 const { WORKER_URL_PADRAO } = require('../config/ia.js')
-
+const { parseEvent } = require('./chatProtocol.js')
 const criarErro = (message, code) => Object.assign(new Error(message), { code })
-const isConfigurado = () => Boolean(process.env.CLOUDFLARE_WORKER_URL || WORKER_URL_PADRAO)
-
-const extrairConteudo = (dados) => {
-    if (typeof dados === 'string') return dados
-    return dados?.response || dados?.choices?.[0]?.delta?.content || dados?.choices?.[0]?.message?.content || ''
-}
-
-const gerarResposta = async (mensagens, aoReceberTrecho, signal) => {
+const isConfigurado = () => Boolean(process.env.CLOUDFLARE_WORKER_URL && process.env.CLOUDFLARE_CHAT_TOKEN)
+async function gerarResposta(messages, onChunk, signal) {
     const url = process.env.CLOUDFLARE_WORKER_URL || WORKER_URL_PADRAO
-    let resposta
+    const token = process.env.CLOUDFLARE_CHAT_TOKEN
+    let response
     try {
-        resposta = await fetch(url, {
+        response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: mensagens }),
-            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_IA_MS)]) : AbortSignal.timeout(TIMEOUT_IA_MS)
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ messages }),
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
         })
     } catch (error) {
         signal?.throwIfAborted()
-        throw criarErro(error.name === 'TimeoutError' ? 'A IA demorou demais para responder.' : 'Não foi possível conectar à IA na nuvem.', 'IA_INDISPONIVEL')
+        throw criarErro(error.name === 'TimeoutError' ? 'A IA demorou demais para responder.' : 'Não foi possível conectar à IA.', 'IA_INDISPONIVEL')
     }
-    if (!resposta.ok) {
-        console.error('Worker da IA respondeu com status:', resposta.status)
-        throw criarErro(`O serviço de IA respondeu com status ${resposta.status}.`, 'IA_PROVEDOR')
+    if (!response.ok) {
+        await response.body?.cancel()
+        throw criarErro(`O serviço de IA respondeu com status ${response.status}.`, 'IA_PROVEDOR')
     }
-    if (!resposta.body) throw criarErro('A IA não retornou um fluxo de resposta.', 'IA_RESPOSTA_INVALIDA')
-
-    const reader = resposta.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let respostaCompleta = ''
-    const processarEvento = (evento) => {
-        const dadosEvento = evento.split(/\r?\n/).filter((linha) => linha.startsWith('data:'))
-            .map((linha) => linha.slice(5).trim()).join('\n')
-        if (!dadosEvento || dadosEvento === '[DONE]') return
-        let dados
-        try { dados = JSON.parse(dadosEvento) } catch { dados = dadosEvento }
-        const trecho = extrairConteudo(dados)
-        if (trecho) { respostaCompleta += trecho; aoReceberTrecho(trecho) }
+    if (!response.body) throw criarErro('A IA não retornou um fluxo.', 'IA_RESPOSTA_INVALIDA')
+    const reader = response.body.getReader(), decoder = new TextDecoder()
+    let buffer = '', result = '', complete = false
+    const handleEvent = event => {
+        const parsed = parseEvent(event)
+        if (parsed?.error) throw criarErro(parsed.error, 'IA_FLUXO_INTERROMPIDO')
+        if (parsed?.done) complete = true
+        if (parsed?.text) { result += parsed.text; onChunk(parsed.text) }
     }
     try {
-        while (true) {
+        while (!complete) {
             const { value, done } = await reader.read()
             buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-            const eventos = buffer.split(/\r?\n\r?\n/)
-            buffer = eventos.pop() || ''
-            eventos.forEach(processarEvento)
-            if (done) break
+            const events = buffer.split(/\r?\n\r?\n/)
+            buffer = events.pop() || ''
+            for (const event of events) { handleEvent(event); if (complete) break }
+            signal?.throwIfAborted()
+            if (done) { if (!complete && buffer.trim()) handleEvent(buffer); break }
         }
-        if (buffer.trim()) processarEvento(buffer)
+        signal?.throwIfAborted()
+        if (!complete) throw criarErro('A conexão terminou antes da conclusão da resposta.', 'IA_FLUXO_INTERROMPIDO')
+        if (!result.trim()) throw criarErro('A IA retornou uma resposta vazia.', 'IA_RESPOSTA_VAZIA')
+        return result.trim()
     } catch (error) {
         signal?.throwIfAborted()
         if (error.code) throw error
         throw criarErro('A conexão com a IA foi interrompida.', 'IA_FLUXO_INTERROMPIDO')
-    }
-    signal?.throwIfAborted()
-    if (!respostaCompleta.trim()) throw criarErro('A IA retornou uma resposta vazia.', 'IA_RESPOSTA_VAZIA')
-    return respostaCompleta.trim()
+    } finally { await reader.cancel().catch(() => {}) }
 }
-
 module.exports = { isConfigurado, gerarResposta }

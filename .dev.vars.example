@@ -1,0 +1,9 @@
+# Chaves opcionais; nunca preencha este arquivo versionado.
+# Copie para .dev.vars e configure os valores somente nessa cópia.
+CHAT_API_TOKEN=
+TAVILY_API_KEY=
+BRAPI_TOKEN=
+HG_BRASIL_API_KEY=
+# Domínios adicionais autorizados no navegador, separados por vírgula.
+# O próprio domínio do Worker já é permitido.
+ALLOWED_ORIGINS=

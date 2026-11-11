@@ -256,7 +256,7 @@ test('Worker integra seleção nativa, consulta e resposta SSE nas duas rotas de
     for (const path of ['/chat', '/v1/ia/chat-publico']) {
         let queried = 0, planning = 0, final = 0
         const context = {
-            module: { exports: {} }, Request, Response, URL, ReadableStream, TextEncoder, TextDecoder, AbortSignal,
+            module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, AbortSignal,
             console: { info() {}, error() {} }, Date, Map, setTimeout, clearTimeout,
             fetch: async url => {
                 queried++
@@ -266,6 +266,7 @@ test('Worker integra seleção nativa, consulta e resposta SSE nas duas rotas de
         }
         require('node:vm').runInNewContext(built.outputFiles[0].text, context)
         const env = {
+            CHAT_API_TOKEN: 'test-token',
             CHAT_RATE_LIMITER: { limit: async () => ({ success: true }) },
             AI: { run: async (_model, input) => {
                 if (input.stream === false) {
@@ -280,7 +281,7 @@ test('Worker integra seleção nativa, consulta e resposta SSE nas duas rotas de
                 return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('data: {"response":"Taxa consultada no Banco Central."}\n\n')); c.close() } })
             } }
         }
-        const response = await context.module.exports.default.fetch(new Request('https://test' + path, { method: 'POST', body: JSON.stringify({ messages: [{ role: 'assistant', content: 'Falamos sobre juros.' }, { role: 'user', content: 'E a Selic hoje?' }] }) }), env)
+        const response = await context.module.exports.default.fetch(new Request('https://test' + path, { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ messages: [{ role: 'assistant', content: 'Falamos sobre juros.' }, { role: 'user', content: 'E a Selic hoje?' }] }) }), env)
         assert.equal(response.status, 200)
         const body = await response.text()
         assert.match(body, /Taxa consultada no Banco Central/)

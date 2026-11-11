@@ -1,4 +1,4 @@
-#conversa { max-height: 65vh; overscroll-behavior: contain; scroll-behavior: auto; }
+#conversa { overscroll-behavior: contain; scroll-behavior: auto; }
 .message-block { min-width: 0; }
 .message-block.assistant { width: min(100%, 780px); max-width: 100%; }
 .ai-content { white-space: normal; line-height: 1.75; }

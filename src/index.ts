@@ -1,131 +1,116 @@
-import presentationPrompt from "./ai-presentation-prompt.js";
-import systemPrompt from "./ai-system-prompt.js";
-import financialChat from "./services/financial/financialChatOrchestrator.js";
-export type Env = Cloudflare.Env & {
+import presentationPrompt from './ai-presentation-prompt.js';
+import systemPrompt from './ai-system-prompt.js';
+import financialChat from './services/financial/financialChatOrchestrator.js';
+import protocol from './services/chatProtocol.js';
+
+export type Env = {
+  AI: Ai;
+  CHAT_RATE_LIMITER: RateLimit;
+  CHAT_API_TOKEN?: string;
+  ALLOWED_ORIGINS?: string;
   HG_BRASIL_API_KEY?: string;
   BRAPI_TOKEN?: string;
   TAVILY_API_KEY?: string;
+  FINANCIAL_TOOLS_ENABLED?: string;
   FINANCIAL_MAX_WEB_SEARCHES?: string;
   TAVILY_HTTP_TIMEOUT_MS?: string;
-  FINANCIAL_TOOLS_ENABLED?: string;
 };
-
-const ultimaPerguntaPorIp = new Map<string, number>();
-let ultimaLimpeza = Date.now();
-const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { ...corsHeaders, "Cache-Control": "no-store" } });
-
-const criarFluxoDoChat = (origem: ReadableStream, encoder: TextEncoder, onCancel: () => void) => {
-  const reader = origem.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let cancelled = false;
-  return new ReadableStream({
-    async pull(controller) {
-      let emitted = false;
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (cancelled) return;
-          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-          const eventos = buffer.split(/\r?\n\r?\n/);
-          buffer = eventos.pop() || "";
-          for (const evento of eventos) {
-            const linha = evento.split(/\r?\n/).find((item) => item.startsWith("data:"));
-            if (!linha) continue;
-            const bruto = linha.slice(5).trim();
-            if (!bruto || bruto === "[DONE]") continue;
-            let dados: { response?: string; error?: string; choices?: Array<{ delta?: { content?: string | null }; message?: { content?: string | null } }> };
-            try { dados = JSON.parse(bruto); } catch { continue; }
-            const conteudo = dados.response || dados.choices?.[0]?.delta?.content || dados.choices?.[0]?.message?.content || "";
-            if (conteudo) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tipo: "trecho", conteudo })}\n\n`));
-              emitted = true;
-            }
-            if (dados.error) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tipo: "erro", mensagem: dados.error })}\n\n`));
-              emitted = true;
-            }
-          }
-          if (!done && emitted) return;
-          if (done) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tipo: "fim" })}\n\n`));
-            controller.close();
-            return;
-          }
-        }
-      } catch {
-        if (cancelled) return;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tipo: "erro", mensagem: "A conexão com a IA foi interrompida." })}\n\n`));
-        controller.close();
-      }
-    },
-    cancel(reason) { cancelled = true; onCancel(); return reader.cancel(reason); },
-  });
-};
+const MODEL = '@cf/google/gemma-4-26b-a4b-it';
+const lastRequest = new Map<string, number>();
+let lastCleanup = Date.now();
+type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/health" && request.method === "GET") return json({ online: true, service: "assistente-financeira" });
-    const rotaChatPublico = url.pathname === "/v1/ia/chat-publico";
-    const rotaLegada = url.pathname === "/chat";
-    if ((rotaChatPublico || rotaLegada) && request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-    if (request.method !== "POST" || (!rotaChatPublico && !rotaLegada)) return json({ mensagem: "Rota não encontrada." }, 404);
-
-    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-    const agora = Date.now();
-    const ultimaPergunta = ultimaPerguntaPorIp.get(ip);
-    if (agora - ultimaLimpeza > 60_000) {
-      for (const [chave, horario] of ultimaPerguntaPorIp) if (agora - horario >= 60_000) ultimaPerguntaPorIp.delete(chave);
-      ultimaLimpeza = agora;
-    }
-    if (ultimaPergunta && agora - ultimaPergunta < 5_000) {
-      const segundos = Math.ceil((5_000 - (agora - ultimaPergunta)) / 1_000);
-      return json({ mensagem: `Aguarde ${segundos} segundo(s) antes de enviar outra pergunta.` }, 429);
-    }
-    ultimaPerguntaPorIp.set(ip, agora);
-    const limite = await env.CHAT_RATE_LIMITER.limit({ key: ip });
-    if (!limite.success) return json({ mensagem: "Limite de uso atingido. Tente novamente mais tarde." }, 429);
-
-    let body: { messages?: unknown };
-    try { body = await request.json() as { messages?: unknown }; }
-    catch { return json({ mensagem: "O corpo precisa ser um JSON válido." }, 400); }
-    if (!Array.isArray(body.messages) || body.messages.length === 0 || body.messages.length > 12) return json({ mensagem: "Envie de 1 a 12 mensagens." }, 400);
-    const validas = body.messages.every((item) => {
-      if (!item || typeof item !== "object") return false;
-      const mensagem = item as { role?: unknown; content?: unknown };
-      const papeisPermitidos = rotaLegada ? ["system", "user", "assistant"] : ["user", "assistant"];
-      // O backend envia o prompt compartilhado completo na rota legada.
-      // Apenas essas versões conhecidas podem ultrapassar o limite comum.
-      const promptCompartilhado = rotaLegada && mensagem.role === "system" &&
-        (mensagem.content === systemPrompt || mensagem.content === systemPrompt + "\n" + presentationPrompt);
-      return papeisPermitidos.includes(String(mensagem.role)) && typeof mensagem.content === "string" && mensagem.content.trim().length > 0 &&
-        (promptCompartilhado || mensagem.content.length <= (mensagem.role === "assistant" ? 16000 : 2000));
+    const origin = request.headers.get('Origin');
+    const allowed = [url.origin, ...(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)];
+    const originAllowed = !origin || allowed.includes(origin);
+    const headers = new Headers({
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Vary': 'Origin',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Expose-Headers': 'Retry-After',
     });
-    if (!validas) return json({ mensagem: "Mensagem inválida ou maior que 2000 caracteres." }, 400);
-
-    const mensagens = rotaChatPublico ? [{ role: "system", content: systemPrompt + "\n" + presentationPrompt }, ...body.messages] : body.messages;
+    if (origin && originAllowed) headers.set('Access-Control-Allow-Origin', origin);
+    const json = (body: unknown, status = 200, retry?: number) => {
+      const result = new Headers(headers);
+      if (retry) result.set('Retry-After', String(retry));
+      return Response.json(body, { status, headers: result });
+    };
+    if (!originAllowed) return json({ mensagem: 'Origem não autorizada.' }, 403);
+    if (url.pathname === '/health' && request.method === 'GET') {
+      return json({ online: true, service: 'ia-fimap', iaConfigurada: Boolean(env.AI), model: MODEL });
+    }
+    const publicRoute = url.pathname === '/v1/ia/chat-publico';
+    const privateRoute = url.pathname === '/v1/ia/chat';
+    const legacyRoute = url.pathname === '/chat';
+    if (!publicRoute && !privateRoute && !legacyRoute) return json({ mensagem: 'Rota não encontrada.' }, 404);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'POST') return json({ mensagem: 'Use POST para enviar mensagens.' }, 405);
+    if (!publicRoute) {
+      if (!env.CHAT_API_TOKEN) return json({ mensagem: 'A integração com o back-end ainda não foi configurada.' }, 503);
+      if (request.headers.get('Authorization') !== `Bearer ${env.CHAT_API_TOKEN}`) return json({ mensagem: 'Token da integração inválido.' }, 401);
+    }
+    if (Number(request.headers.get('Content-Length')) > 262144) return json({ mensagem: 'Requisição muito grande.' }, 413);
+    let messages: Message[];
     try {
-      const mensagensComFerramentas = await financialChat.prepareFinancialMessages(
-        mensagens, env,
-        (inputs) => env.AI.run("@cf/google/gemma-4-26b-a4b-it", inputs),
-        { signal: request.signal, logger: (dados) => console.info(JSON.stringify(dados)) }
-      );
-      request.signal.throwIfAborted();
-      const stream = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
-        messages: mensagensComFerramentas as Array<{ role: "system" | "user" | "assistant"; content: string }>,
-        stream: true,
-        temperature: 0.6,
-        chat_template_kwargs: { enable_thinking: true },
+      const raw = await request.text();
+      if (raw.length > 262144) return json({ mensagem: 'Requisição muito grande.' }, 413);
+      const body = JSON.parse(raw) as { messages?: unknown };
+      if (!Array.isArray(body.messages) || !body.messages.length || body.messages.length > 12) return json({ mensagem: 'Envie de 1 a 12 mensagens.' }, 400);
+      const valid = body.messages.every(item => {
+        if (!item || typeof item !== 'object') return false;
+        const { role, content } = item;
+        const roles = legacyRoute ? ['system', 'user', 'assistant'] : ['user', 'assistant'];
+        const shared = legacyRoute && role === 'system' && (content === systemPrompt || content === systemPrompt + '\n' + presentationPrompt);
+        return roles.includes(role) && typeof content === 'string' && content.trim().length > 0 &&
+          (shared || content.length <= (role === 'assistant' ? 16000 : 2000));
       });
-      if (rotaLegada) return new Response(stream as ReadableStream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform" } });
-      return new Response(criarFluxoDoChat(stream as ReadableStream, new TextEncoder(), () => {
-        if (ultimaPerguntaPorIp.get(ip) === agora) ultimaPerguntaPorIp.delete(ip);
-      }), { headers: { ...corsHeaders, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Content-Type-Options": "nosniff" } });
-    } catch (error) {
-      console.error("Workers AI falhou ao gerar a resposta.");
-      return json({ mensagem: "A Cloudflare não conseguiu gerar a resposta." }, 502);
+      if (!valid || body.messages.at(-1)?.role !== 'user') return json({ mensagem: 'Mensagens inválidas. Termine com uma pergunta de até 2000 caracteres.' }, 400);
+      messages = body.messages;
+    } catch { return json({ mensagem: 'O corpo precisa ser um JSON válido.' }, 400); }
+
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const now = Date.now();
+    if (now - lastCleanup > 60000) {
+      for (const [key, time] of lastRequest) if (now - time >= 60000) lastRequest.delete(key);
+      lastCleanup = now;
+    }
+    const previous = lastRequest.get(ip);
+    if (previous && now - previous < 5000) {
+      const retry = Math.ceil((5000 - (now - previous)) / 1000);
+      return json({ mensagem: `Aguarde ${retry} segundo(s) antes de enviar outra pergunta.` }, 429, retry);
+    }
+    const release = () => { if (lastRequest.get(ip) === now) lastRequest.delete(ip); };
+    lastRequest.set(ip, now);
+    try {
+      const limit = await env.CHAT_RATE_LIMITER.limit({ key: ip });
+      if (!limit.success) { release(); return json({ mensagem: 'Limite de uso atingido. Tente novamente em um minuto.' }, 429, 60); }
+      const conversation = legacyRoute && messages[0]?.role === 'system' ? messages
+        : [{ role: 'system', content: systemPrompt + '\n' + presentationPrompt }, ...messages];
+      const prepared = await financialChat.prepareFinancialMessages(conversation, env,
+        (inputs: Ai_Cf_Google_Gemma_4_26B_A4B_It_Input) => env.AI.run(MODEL, inputs),
+        { signal: request.signal, logger: (data: unknown) => console.info(JSON.stringify(data)) });
+      request.signal.throwIfAborted();
+      const source = await env.AI.run(MODEL, {
+        messages: prepared,
+        stream: true,
+        max_completion_tokens: 4096,
+        temperature: 0.4,
+        chat_template_kwargs: { enable_thinking: false },
+      });
+      if (!source || typeof (source as ReadableStream).getReader !== 'function') throw new Error('INVALID_STREAM');
+      const stream = legacyRoute ? source as ReadableStream : protocol.createPublicStream(source, release);
+      const streamHeaders = new Headers(headers);
+      streamHeaders.set('Content-Type', 'text/event-stream; charset=utf-8');
+      streamHeaders.set('Cache-Control', 'no-cache, no-transform');
+      return new Response(stream, { headers: streamHeaders });
+    } catch {
+      release();
+      if (request.signal.aborted) return json({ mensagem: 'Geração cancelada.' }, 499);
+      console.error('Workers AI falhou ao gerar a resposta.');
+      return json({ mensagem: 'Não foi possível gerar a resposta. Tente novamente em instantes.' }, 502);
     }
   },
 } satisfies ExportedHandler<Env>;
