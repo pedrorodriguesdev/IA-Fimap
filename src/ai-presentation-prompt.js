@@ -17,8 +17,8 @@
  * nunca cometerá erros.
  *
  * QUANDO É USADO
- * O programa principal da IA e a conversa atendida por src/app.js leem este
- * arquivo e acrescentam suas orientações ao pedido enviado para o modelo.
+ * O Worker em src/index.ts lê este arquivo e acrescenta suas orientações
+ * ao pedido enviado para o modelo.
  * Ele continua sendo usado mesmo quando a página de teste não está presente.
  * Mudar este texto pode mudar a forma das próximas respostas. O modelo
  * escolhido continua definido em src/index.ts.

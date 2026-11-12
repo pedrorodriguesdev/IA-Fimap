@@ -1,4 +1,4 @@
-/* Explicit visual blocks: ```fimap followed by JSON (see docs/ai-chat.md). */
+/* Explicit visual blocks: ```fimap followed by JSON (contract in src/ai-presentation-prompt.js). */
 window.FimapRenderer = (() => {
   const el = (tag, cls, text) => {
     const node = document.createElement(tag)

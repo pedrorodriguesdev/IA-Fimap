@@ -1,10 +1,19 @@
 'use strict'
+/*
+ * Faz a pesquisa na internet quando a IA pede a ferramenta pesquisarWeb.
+ * Envia a consulta à Tavily usando o secret TAVILY_API_KEY e recebe até cinco resultados.
+ * Entrega títulos, links e trechos para a IA preparar sua resposta e citar as fontes.
+ * Não salva um histórico de buscas nem implementa cache neste arquivo.
+ */
 const { error, setting } = require('../financial/httpClient')
 
+// O endereço é fixo: a IA escolhe os termos da busca, não o servidor que recebe a chave.
 const SEARCH_URL = 'https://api.tavily.com/search'
 const MAX_RESPONSE_BYTES = 500000
 const ALLOWED_TOPICS = new Set(['general', 'news', 'finance'])
 
+// Executada quando a Tavily responde. Lê o JSON em pedaços e limita o tamanho,
+// inclusive se a resposta não informar antecipadamente quantos bytes serão enviados.
 async function readJson(response) {
     if (!response.body) throw error('RESPOSTA_INVALIDA')
     const declaredBytes = Number(response.headers.get('content-length'))
@@ -29,6 +38,8 @@ async function readJson(response) {
     }
 }
 
+// Antes de entregar um link à IA, aceita apenas endereço HTTPS válido, sem login
+// embutido. Links fora desse formato são descartados do resultado.
 function safeResultUrl(value) {
     if (typeof value !== 'string' || value.length > 2048) return null
     try {
@@ -39,8 +50,13 @@ function safeResultUrl(value) {
     }
 }
 
+// Prepara a pesquisa para uma pergunta. A rede e o relógio podem ser substituídos
+// nos testes; em produção usamos fetch e o horário real.
 function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => Date.now() } = {}) {
+    // Conta buscas desta pergunta para aplicar o limite e informar uso nos logs.
     const stats = { calls: 0 }
+    // Executada só quando a IA escolhe pesquisarWeb. Confere a chave, o texto,
+    // o assunto e o limite antes de gastar uma consulta no fornecedor.
     async function search({ query, topic = 'general' }) {
         if (!env.TAVILY_API_KEY) throw error('CHAVE_AUSENTE')
         if (typeof query !== 'string' || !query.trim() || query.length > 400) throw error('ARGUMENTO_INVALIDO')
@@ -49,10 +65,13 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
         signal?.throwIfAborted()
         stats.calls++
 
+        // A busca tem prazo e também pode parar por cancelamento da pergunta.
         const timeout = AbortSignal.timeout(Math.max(100, setting(env, 'TAVILY_HTTP_TIMEOUT_MS', 8000, 15000)))
         const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
         let response
         try {
+            // Pede resultados de busca, sem uma resposta pronta da Tavily e sem
+            // o conteúdo completo das páginas. A própria IA vai montar a resposta.
             response = await fetchImpl(SEARCH_URL, {
                 method: 'POST',
                 headers: {
@@ -69,7 +88,7 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
                     include_raw_content: false,
                     include_published_date: true,
                 }),
-                redirect: 'error',
+                redirect: 'manual',
                 signal: requestSignal,
             })
         } catch {
@@ -77,9 +96,12 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
             throw error('PROVEDOR_INDISPONIVEL')
         }
 
+        // Se o fornecedor recusar, devolve um código conhecido para a IA explicar
+        // a falha. Não segue redirecionamentos e não devolve a chave ou o erro bruto.
         if (!response.ok) {
             const status = response.status
             await response.body?.cancel().catch(() => {})
+            if (status >= 300 && status < 400) throw error('REDIRECIONAMENTO_NAO_PERMITIDO', status)
             const code = status === 400 || status === 422 ? 'PARAMETROS_PROVEDOR'
                 : status === 401 ? 'AUTENTICACAO'
                 : status === 403 || status === 432 || status === 433 ? 'PLANO_OU_PERMISSAO'
@@ -90,6 +112,8 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
 
         const data = await readJson(response)
         if (!data || !Array.isArray(data.results)) throw error('RESPOSTA_INVALIDA')
+        // Reduz os resultados aos campos e tamanhos necessários. A data de
+        // publicação vem da fonte; não é substituída pela data da busca.
         const resultados = data.results.slice(0, 5).flatMap(item => {
             const url = safeResultUrl(item?.url)
             if (!url) return []
@@ -101,6 +125,7 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
             }]
         })
 
+        // O orchestrator recebe estes dados e os coloca na conversa temporária da IA.
         return {
             tipo: 'pesquisa_web',
             fonte: 'Tavily',
@@ -110,6 +135,7 @@ function createTavilySearch(env = {}, { fetchImpl = fetch, signal, now = () => D
         }
     }
 
+    // Expõe a função e sua contagem. Criar este serviço ainda não faz nenhuma busca.
     return { search, stats }
 }
 

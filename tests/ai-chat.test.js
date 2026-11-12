@@ -140,7 +140,7 @@ test('atendimento Node usa a IA publicada por padrão', async () => {
 })
 
 test('site na nuvem entrega o chat, mas recusa Pluggy.html', async () => {
-  const built = await require('esbuild').build({ entryPoints: ['src/testUiWorker.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
+  const built = await require('esbuild').build({ entryPoints: ['src/worker.ts'], bundle: true, write: false, format: 'cjs', platform: 'neutral' })
   const context = { module: { exports: {} }, Request, Response, Headers, URL, ReadableStream, TextEncoder, TextDecoder, console, Date, Map }
   require('node:vm').runInNewContext(built.outputFiles[0].text, context)
   const worker = context.module.exports.default

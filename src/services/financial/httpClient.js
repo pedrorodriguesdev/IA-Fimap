@@ -1,7 +1,7 @@
 // Somente dados públicos de mercado entram no cache; nunca histórico do usuário.
 const caches = new WeakMap()
 const consumption = new WeakMap()
-const ORIGINS = new Set(['https://brasilapi.com.br', 'https://brapi.dev', 'https://api.hgbrasil.com', 'https://api.bcb.gov.br', 'https://olinda.bcb.gov.br', 'https://api.frankfurter.dev'])
+const ORIGINS = new Set(['https://brasilapi.com.br', 'https://brapi.dev', 'https://api.hgbrasil.com', 'https://api.bcb.gov.br', 'https://olinda.bcb.gov.br', 'https://api.frankfurter.dev', 'https://api.geoapify.com'])
 const error = (code, status = null) => Object.assign(new Error(code), { code, status })
 const setting = (env, name, fallback, max) => {
     const value = Number(env[name])
@@ -42,13 +42,13 @@ function createClient(env = {}, { fetchImpl = fetch, signal, now = () => Date.no
     const retries = setting(env, 'FINANCIAL_HTTP_RETRIES', 1, 2)
     async function get(provider, path, query = {}, { headers = {}, kind = 'quote', validate = () => {}, ttl = ttlFor(kind) } = {}) {
         signal?.throwIfAborted()
-        const base = { brasilapi: 'https://brasilapi.com.br', brapi: 'https://brapi.dev', hgbrasil: 'https://api.hgbrasil.com', bcb: 'https://api.bcb.gov.br', olinda: 'https://olinda.bcb.gov.br', frankfurter: 'https://api.frankfurter.dev' }[provider]
+        const base = { brasilapi: 'https://brasilapi.com.br', brapi: 'https://brapi.dev', hgbrasil: 'https://api.hgbrasil.com', bcb: 'https://api.bcb.gov.br', olinda: 'https://olinda.bcb.gov.br', frankfurter: 'https://api.frankfurter.dev', geoapify: 'https://api.geoapify.com' }[provider]
         if (!base || !path.startsWith('/') || path.startsWith('//') || path.includes('..') || path.includes('://')) throw error('URL_NAO_PERMITIDA')
         const url = new URL(path, base)
         if (!ORIGINS.has(url.origin) || url.origin !== base) throw error('URL_NAO_PERMITIDA')
         for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== null) url.searchParams.set(key, String(value))
         // A chave só existe na URL interna; nunca é retornada ou registrada.
-        const cacheKey = `${provider}:${path}:${JSON.stringify(Object.entries(query).filter(([key]) => key !== 'key').sort())}`
+        const cacheKey = `${provider}:${path}:${JSON.stringify(Object.entries(query).filter(([key]) => !['key', 'apiKey'].includes(key)).sort())}`
         const cached = cache.get(cacheKey)
         if (cached && cached.expires > now()) {
             stats.cacheHits++
@@ -67,10 +67,12 @@ function createClient(env = {}, { fetchImpl = fetch, signal, now = () => Date.no
             usage.active++; usage.requests++
             try {
                 const timeout = AbortSignal.timeout(Math.max(100, setting(env, 'FINANCIAL_HTTP_TIMEOUT_MS', 6000, 15000)))
-                response = await fetchImpl(url.href, { headers: { Accept: 'application/json', ...headers }, redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
+                // Workers aceita manual; rejeitamos 3xx sem seguir o Location.
+                response = await fetchImpl(url.href, { headers: { Accept: 'application/json', ...headers }, redirect: 'manual', signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
                 if (!response.ok) {
                     const status = response.status
                     await response.body?.cancel().catch(() => {})
+                    if (status >= 300 && status < 400) throw error('REDIRECIONAMENTO_NAO_PERMITIDO', status)
                     throw error(({ 400: 'PARAMETROS_PROVEDOR', 401: 'AUTENTICACAO', 403: 'PLANO_OU_PERMISSAO', 404: 'NAO_ENCONTRADO', 429: 'COTA_EXCEDIDA' })[status] || 'PROVEDOR_INDISPONIVEL', status)
                 }
                 const data = await readJson(response)

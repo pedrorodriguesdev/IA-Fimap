@@ -2,32 +2,30 @@
   'use strict'
   const $ = id => document.getElementById(id)
   const base = (window.FIMAP_API_URL || '').replace(/\/+$/, '')
-  const form = $('formulario'), input = $('mensagem'), chat = $('conversa'), welcome = $('boas-vindas')
-  const status = $('carregando'), send = $('enviar'), stop = $('parar'), counter = $('contador')
+  const form = $('formulario'), input = $('mensagem'), chat = $('conversa')
+  const status = $('carregando'), send = $('enviar'), stop = $('parar')
   let controller = null, generation = 0, follow = true
-  const history = [], displayed = []
-  $('ano').textContent = new Date().getFullYear()
+  const history = []
   chat.addEventListener('scroll', () => { follow = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 100 })
   const scroll = () => { if (follow) chat.scrollTop = chat.scrollHeight }
-  function resize() { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 150)}px`; counter.textContent = `${input.value.length} / 2000` }
+  function resize() { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 110)}px` }
   input.addEventListener('input', resize)
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit() }
   })
   function busy(value) {
-    send.disabled = value; stop.hidden = !value
+    send.disabled = value; send.hidden = value; stop.hidden = !value
     chat.setAttribute('aria-busy', String(value))
-    document.querySelectorAll('.suggestion').forEach(button => { button.disabled = value })
   }
   function message(role, text = '') {
     const block = document.createElement('article'); block.className = `message-block ${role}`
-    const meta = document.createElement('div'); meta.className = 'message-meta'
-    const author = document.createElement('strong'); author.textContent = role === 'user' ? 'Você' : '✧ Fimap AI'
-    const time = document.createElement('time'); time.dateTime = new Date().toISOString()
-    time.textContent = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+    const avatar = document.createElement('span'); avatar.className = 'message-avatar'
+    avatar.textContent = role === 'user' ? 'Você' : 'AI'; avatar.setAttribute('aria-hidden', 'true')
+    const body = document.createElement('div'); body.className = 'message-body'
     const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = text
-    meta.append(author, time); block.append(meta, bubble); chat.append(block); scroll()
-    return { block, bubble }
+    block.setAttribute('aria-label', role === 'user' ? 'Sua mensagem' : 'Resposta da Fimap AI')
+    body.append(bubble); block.append(avatar, body); chat.append(block); scroll()
+    return { body, bubble }
   }
   async function readStream(response, onText) {
     if (!response.body) throw Error('O serviço não retornou uma resposta.')
@@ -59,11 +57,10 @@
     const id = ++generation, active = new AbortController(); controller = active
     let timedOut = false, complete = '', frame = 0
     const timer = setTimeout(() => { timedOut = true; active.abort() }, 180000)
-    busy(true); follow = true; welcome.hidden = true
-    if (!retry) { message('user', text); displayed.push({ role: 'user', text }) }
+    busy(true); follow = true
+    if (!retry) message('user', text)
     input.value = ''; resize()
     const assistant = message('assistant', 'Preparando sua resposta…')
-    const entry = { role: 'assistant', text: '', state: 'interrompida' }; displayed.push(entry)
     status.textContent = 'Pensando no seu próximo passo…'
     const render = (final = false) => { if (id !== generation) return; window.FimapRenderer.render(assistant.bubble, complete, final); scroll() }
     try {
@@ -87,11 +84,9 @@
       cancelAnimationFrame(frame); frame = 0; render(true)
       history.push({ role: 'user', content: text }, { role: 'assistant', content: complete.slice(0, 16000) })
       while (history.length > 10) history.splice(0, 2)
-      entry.text = complete; entry.state = 'concluída'
       const actions = document.createElement('div'); actions.className = 'message-actions'
-      actions.append(window.FimapRenderer.copy(complete, 'Copiar resposta')); assistant.block.append(actions)
+      actions.append(window.FimapRenderer.copy(complete, 'Copiar resposta')); assistant.body.append(actions)
       status.textContent = 'Resposta concluída. Pode continuar a conversa.'
-      $('conexao').className = 'connection online'; $('conexao').lastElementChild.textContent = 'IA respondeu'
     } catch (error) {
       if (id !== generation) return
       cancelAnimationFrame(frame); frame = 0
@@ -99,12 +94,11 @@
       const interrupted = active.signal.aborted && !timedOut
       const reason = timedOut ? 'A resposta demorou mais que o esperado. Tente novamente.'
         : interrupted ? 'Resposta interrompida por você.' : error.message || 'Não foi possível conectar à IA.'
-      entry.text = complete; entry.state = reason
       const note = document.createElement('p'); note.className = 'message-state'; note.textContent = reason
-      assistant.block.append(note)
+      assistant.body.append(note)
       const retryButton = document.createElement('button'); retryButton.type = 'button'; retryButton.textContent = 'Tentar novamente'
       retryButton.addEventListener('click', () => { if (!controller) submit(text, true) })
-      const actions = document.createElement('div'); actions.className = 'message-actions'; actions.append(retryButton); assistant.block.append(actions)
+      const actions = document.createElement('div'); actions.className = 'message-actions'; actions.append(retryButton); assistant.body.append(actions)
       status.textContent = interrupted ? 'Você pode enviar outra pergunta.' : reason
     } finally {
       clearTimeout(timer); cancelAnimationFrame(frame)
@@ -113,34 +107,10 @@
   }
   form.addEventListener('submit', event => { event.preventDefault(); submit(input.value) })
   stop.addEventListener('click', () => controller?.abort())
-  document.querySelectorAll('.suggestion').forEach(button => button.addEventListener('click', () => submit(button.dataset.prompt)))
-  function reset() {
-    generation++; controller?.abort(); controller = null; history.length = 0; displayed.length = 0
-    chat.replaceChildren(welcome); welcome.hidden = false; busy(false); status.textContent = ''; input.value = ''; resize(); input.focus()
-  }
-  $('nova-conversa').addEventListener('click', reset); $('nova-conversa-mobile').addEventListener('click', reset)
-  document.addEventListener('keydown', event => {
-    if (event.altKey && event.key.toLowerCase() === 'n') { event.preventDefault(); reset() }
+  $('nova-conversa').addEventListener('click', () => {
+    generation++; controller?.abort(); controller = null
+    history.length = 0; chat.replaceChildren(); follow = true
+    form.reset(); status.textContent = ''; busy(false); resize(); input.focus()
   })
-  $('nova-conversa').title = 'Nova conversa (Alt + N)'
-  $('exportar').addEventListener('click', () => {
-    if (!displayed.length) { status.textContent = 'Comece uma conversa para exportar suas mensagens.'; return }
-    const content = '# Conversa com Fimap AI\n\n' + displayed.map(item => `## ${item.role === 'user' ? 'Você' : 'Fimap AI'}\n\n${item.text}${item.state && item.state !== 'concluída' ? `\n\n_${item.state}_` : ''}`).join('\n\n')
-    const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown;charset=utf-8' }))
-    const link = document.createElement('a'); link.href = url; link.download = `fimap-conversa-${new Date().toISOString().slice(0, 10)}.md`; link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  })
-  const dialog = $('sobre-dialog')
-  $('sobre').addEventListener('click', () => dialog.showModal())
-  $('fechar-sobre').addEventListener('click', () => dialog.close())
-  dialog.addEventListener('click', event => { if (event.target === dialog) { const box = dialog.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close() } })
-  async function checkHealth() {
-    try {
-      const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(10000), cache: 'no-store' })
-      const health = await response.json()
-      if (!response.ok || !health.online || !health.iaConfigurada) throw Error('indisponível')
-      $('conexao').className = 'connection online'; $('conexao').lastElementChild.textContent = 'Serviço disponível'
-    } catch { $('conexao').className = 'connection offline'; $('conexao').lastElementChild.textContent = 'Sem conexão'; }
-  }
-  resize(); checkHealth()
+  form.reset(); resize()
 })()

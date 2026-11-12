@@ -11,5 +11,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/index.ts", "src/worker.ts", "src/testUiWorker.ts"]
+  "include": ["src/index.ts", "src/worker.ts"]
 }

@@ -1,5 +1,5 @@
 // Adaptador Node para copiar/importar no back-end separado. Não é executado pelo Worker.
-const { WORKER_URL_PADRAO } = require('../config/ia.js')
+const WORKER_URL_PADRAO = 'https://ia-fimap.fimap-agency.workers.dev/v1/ia/chat'
 const { parseEvent } = require('./chatProtocol.js')
 const criarErro = (message, code) => Object.assign(new Error(message), { code })
 const isConfigurado = () => Boolean(process.env.CLOUDFLARE_WORKER_URL && process.env.CLOUDFLARE_CHAT_TOKEN)

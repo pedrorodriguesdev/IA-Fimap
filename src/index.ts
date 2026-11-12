@@ -2,15 +2,19 @@ import presentationPrompt from './ai-presentation-prompt.js';
 import systemPrompt from './ai-system-prompt.js';
 import financialChat from './services/financial/financialChatOrchestrator.js';
 import protocol from './services/chatProtocol.js';
+import aiProvider from './services/aiProvider.js';
 
 export type Env = {
-  AI: Ai;
+  AI?: Ai;
+  AI_PROVIDER_ACCOUNT_ID?: string;
+  AI_PROVIDER_API_TOKEN?: string;
   CHAT_RATE_LIMITER: RateLimit;
   CHAT_API_TOKEN?: string;
   ALLOWED_ORIGINS?: string;
   HG_BRASIL_API_KEY?: string;
   BRAPI_TOKEN?: string;
   TAVILY_API_KEY?: string;
+  GEOAPIFY_API_KEY?: string;
   FINANCIAL_TOOLS_ENABLED?: string;
   FINANCIAL_MAX_WEB_SEARCHES?: string;
   TAVILY_HTTP_TIMEOUT_MS?: string;
@@ -40,7 +44,7 @@ export default {
     };
     if (!originAllowed) return json({ mensagem: 'Origem não autorizada.' }, 403);
     if (url.pathname === '/health' && request.method === 'GET') {
-      return json({ online: true, service: 'ia-fimap', iaConfigurada: Boolean(env.AI), model: MODEL });
+      return json({ online: true, service: 'ia-fimap', iaConfigurada: aiProvider.isAiConfigured(env), configuracaoIA: aiProvider.configurationStatus(env), provedorIA: aiProvider.usesExternalAccount(env) ? 'conta-externa' : 'conta-do-worker', model: MODEL });
     }
     const publicRoute = url.pathname === '/v1/ia/chat-publico';
     const privateRoute = url.pathname === '/v1/ia/chat';
@@ -71,6 +75,7 @@ export default {
       messages = body.messages;
     } catch { return json({ mensagem: 'O corpo precisa ser um JSON válido.' }, 400); }
 
+    if (!aiProvider.isAiConfigured(env)) return json({ mensagem: 'A conexão com a IA ainda não está configurada.' }, 503);
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const now = Date.now();
     if (now - lastCleanup > 60000) {
@@ -90,27 +95,28 @@ export default {
       const conversation = legacyRoute && messages[0]?.role === 'system' ? messages
         : [{ role: 'system', content: systemPrompt + '\n' + presentationPrompt }, ...messages];
       const prepared = await financialChat.prepareFinancialMessages(conversation, env,
-        (inputs: Ai_Cf_Google_Gemma_4_26B_A4B_It_Input) => env.AI.run(MODEL, inputs),
+        (inputs: Ai_Cf_Google_Gemma_4_26B_A4B_It_Input) => aiProvider.runAi(env, MODEL, inputs, request.signal),
         { signal: request.signal, logger: (data: unknown) => console.info(JSON.stringify(data)) });
       request.signal.throwIfAborted();
-      const source = await env.AI.run(MODEL, {
+      const source = await aiProvider.runAi(env, MODEL, {
         messages: prepared,
         stream: true,
         max_completion_tokens: 4096,
         temperature: 0.4,
         chat_template_kwargs: { enable_thinking: false },
-      });
+      }, request.signal);
       if (!source || typeof (source as ReadableStream).getReader !== 'function') throw new Error('INVALID_STREAM');
       const stream = legacyRoute ? source as ReadableStream : protocol.createPublicStream(source, release);
       const streamHeaders = new Headers(headers);
       streamHeaders.set('Content-Type', 'text/event-stream; charset=utf-8');
       streamHeaders.set('Cache-Control', 'no-cache, no-transform');
       return new Response(stream, { headers: streamHeaders });
-    } catch {
+    } catch (cause) {
       release();
       if (request.signal.aborted) return json({ mensagem: 'Geração cancelada.' }, 499);
-      console.error('Workers AI falhou ao gerar a resposta.');
-      return json({ mensagem: 'Não foi possível gerar a resposta. Tente novamente em instantes.' }, 502);
+      const error = aiProvider.publicFailure(cause);
+      console.error(JSON.stringify({ evento: 'ai_error', codigo: error.code }));
+      return json({ mensagem: error.message, codigo: error.code }, error.status, error.retryAfter);
     }
   },
 } satisfies ExportedHandler<Env>;

@@ -9,15 +9,12 @@
   "scripts": {
     "dev": "wrangler dev --config wrangler.jsonc",
     "start": "npm run dev",
-    "build": "wrangler deploy --dry-run --outdir dist --config wrangler.jsonc",
+    "build": "wrangler deploy --dry-run --config wrangler.jsonc",
     "deploy": "wrangler deploy --config wrangler.jsonc",
     "test": "node --test tests/*.test.js",
     "test:browser": "node scripts/test-browser.cjs",
     "test:live": "node scripts/test-live.cjs",
     "typecheck": "tsc --noEmit",
-    "ui:dev": "npm run dev",
-    "ui:build": "npm run build",
-    "ui:deploy": "npm run deploy",
     "cf:whoami": "wrangler whoami"
   },
   "devDependencies": {

@@ -65,6 +65,38 @@ test('consulta banco por COMPE sem confundir com saldo ou dados privados', async
     assert.equal((await tools.execute('consultarInstituicaoFinanceira', { codigo: 1 })).dados[0].codigo, 1)
 })
 
+test('consultas financeiras e pesquisa usam um modo de redirecionamento aceito pelo Worker', async () => {
+    const tools = registry((url, options) => {
+        // O runtime Workers rejeita redirect: error antes de enviar a requisição.
+        if (!['manual', 'follow'].includes(options.redirect)) throw new TypeError('Invalid redirect value')
+        assert.equal(options.redirect, 'manual')
+        if (url.hostname === 'brasilapi.com.br') return json({ code: 1, name: 'Banco de teste' })
+        assert.equal(url.origin, 'https://api.tavily.com')
+        return json({ results: [{ title: 'Fonte', url: 'https://example.com/fonte', content: 'Dado de teste' }] })
+    }, { TAVILY_API_KEY: 'chave-tavily-teste' })
+    assert.equal((await tools.execute('consultarInstituicaoFinanceira', { codigo: 1 })).dados[0].codigo, 1)
+    assert.equal((await tools.execute('pesquisarWeb', { query: 'educação financeira' })).resultados[0].url, 'https://example.com/fonte')
+})
+
+test('redirecionamentos de APIs são recusados sem repetir pedidos nem expor credenciais', async () => {
+    for (const status of [301, 302, 303, 307, 308]) {
+        for (const [tool, input, host] of [
+            ['consultarCotacaoAcao', { simbolo: 'PETR4' }, 'brapi.dev'],
+            ['pesquisarWeb', { query: 'educação financeira' }, 'api.tavily.com']
+        ]) {
+            let requests = 0
+            const tools = registry((url, options) => {
+                requests++
+                assert.equal(url.hostname, host)
+                assert.equal(options.redirect, 'manual')
+                return new Response('corpo-com-segredo', { status, headers: { Location: 'https://fora.test/segredo' } })
+            }, { BRAPI_TOKEN: 'segredo', TAVILY_API_KEY: 'segredo', FINANCIAL_PROVIDERS_ACOES: 'brapi' })
+            await assert.rejects(tools.execute(tool, input), cause => cause.code === 'REDIRECIONAMENTO_NAO_PERMITIDO' && cause.status === status && !/segredo|fora.test/.test(cause.message))
+            assert.equal(requests, 1)
+        }
+    }
+})
+
 test('cálculos financeiros verificam compostos, taxa zero, Price, SAC, meta e retorno líquido', () => {
     assert.equal(calc.investment({ capital: 1000, taxaPercentual: 10, periodos: 2 }).valorFinalBruto, 1210)
     assert.equal(calc.investment({ capital: 1000, taxaPercentual: 0, periodos: 12, aporte: 100 }).valorFinalBruto, 2200)
