@@ -70,6 +70,8 @@ async function prepareFinancialMessages(messages, env, infer, options = {}) {
     // Guarda resultados apenas durante esta pergunta para não repetir a mesma consulta.
     // Não é memória permanente da IA nem histórico de outros usuários.
     const seen = new Map()
+    const knownTools = new Set(registry.definitions.map(item => item.function.name))
+    const executions = []
     let executed = 0
     try {
         for (let round = 0; round < maxRounds && executed < maxCalls; round++) {
@@ -108,6 +110,7 @@ async function prepareFinancialMessages(messages, env, infer, options = {}) {
                             signal?.throwIfAborted()
                             result = { ok: false, erro: /^[A-Z_]+(?::[\w]+)?$/.test(cause.code || '') ? cause.code : 'CONSULTA_INDISPONIVEL', mensagem: 'Não foi possível obter este resultado. Não invente valores.' }
                         }
+                        executions.push({ ferramenta: knownTools.has(call.function.name) ? call.function.name : 'desconhecida', ok: result.ok, ...(result.ok ? {} : { codigo: result.erro }) })
                         seen.set(key, result)
                     }
                 } catch {
@@ -129,8 +132,8 @@ async function prepareFinancialMessages(messages, env, infer, options = {}) {
         conversation.push({ role: 'system', content: 'A seleção automática de ferramentas ficou indisponível nesta requisição. Use somente resultados já recebidos; não invente cotações, taxas ou consultas.' })
     }
     if (executed >= maxCalls && maxCalls > 0) conversation.push({ role: 'system', content: 'Limite de ferramentas atingido. Responda com os dados obtidos e explique o que faltar.' })
-    // Apenas contagens: sem mensagens, argumentos, respostas brutas ou credenciais.
-    if (options.logger) options.logger({ evento: 'financial_tools', ferramentas: executed, ...registry.stats })
+    // Nomes conhecidos, resultado e contagens; sem mensagens, argumentos ou credenciais.
+    if (options.logger) options.logger({ evento: 'financial_tools', ferramentas: executed, execucoes: executions, ...registry.stats })
     // O chamador recebe a conversa com pedidos e resultados e gera a resposta final.
     return conversation
 }

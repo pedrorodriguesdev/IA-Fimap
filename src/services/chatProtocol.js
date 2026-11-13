@@ -52,7 +52,7 @@ function createPublicStream(source, onCancel = () => {}) {
                     }
                     if (done && !terminal) {
                         if (buffer.trim()) process(buffer, controller)
-                        finish(controller)
+                        if (!terminal) finish(controller, 'A conexão terminou antes de concluir a resposta. Tente novamente.')
                     }
                     if (terminal) { await reader.cancel().catch(() => {}); return }
                     if (sent) return

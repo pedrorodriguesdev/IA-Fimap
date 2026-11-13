@@ -52,7 +52,10 @@ test('credenciais externas incompletas ou inválidas não usam a conta do Worker
   for (const extra of [
     { AI_PROVIDER_ACCOUNT_ID: undefined }, { AI_PROVIDER_API_TOKEN: undefined },
     { AI_PROVIDER_ACCOUNT_ID: '' }, { AI_PROVIDER_API_TOKEN: '' },
-    { AI_PROVIDER_ACCOUNT_ID: 'https://outra.test' }, { AI_PROVIDER_API_TOKEN: 'token\ninválido' }
+    { AI_PROVIDER_ACCOUNT_ID: 'https://outra.test' }, { AI_PROVIDER_API_TOKEN: 'token\ninválido' },
+    { AI_PROVIDER_API_TOKEN: 'Bearer token' }, { AI_PROVIDER_API_TOKEN: '"token"' },
+    { AI_PROVIDER_API_TOKEN: "'token'" }, { AI_PROVIDER_API_TOKEN: 'token com espacos' },
+    { AI_PROVIDER_API_TOKEN: 'token\\' }
   ]) {
     const env = external(extra)
     assert.equal(isAiConfigured(env), false)
@@ -136,6 +139,7 @@ test('Worker usa a conta externa no planejamento, consulta de API e resposta fin
   assert.equal(health.iaConfigurada, true)
   assert.equal(health.provedorIA, 'conta-externa')
   assert.equal(health.configuracaoIA, 'pronta')
+  assert.equal(health.verificacaoIA, 'somente-formato')
   for (const [extra, code] of [[{ AI_PROVIDER_ACCOUNT_ID: 'email@teste.test' }, 'id-conta-invalido'], [{ AI_PROVIDER_API_TOKEN: '' }, 'token-invalido']]) {
     const bad = { ...env, ...extra }
     const health = await (await worker.fetch(new Request('https://test/health'), bad)).json()

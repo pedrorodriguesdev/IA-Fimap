@@ -15,7 +15,19 @@
     "test:browser": "node scripts/test-browser.cjs",
     "test:live": "node scripts/test-live.cjs",
     "typecheck": "tsc --noEmit",
-    "cf:whoami": "wrangler whoami"
+    "cf:whoami": "wrangler whoami",
+    "doctor": "node scripts/doctor.cjs",
+    "doctor:live": "node scripts/doctor.cjs --live",
+    "ai:configure": "node scripts/configure-ai.cjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "predev": "node scripts/doctor.cjs",
+    "pretest": "node scripts/doctor.cjs",
+    "pretypecheck": "node scripts/doctor.cjs",
+    "prebuild": "node scripts/doctor.cjs",
+    "pretest:browser": "node scripts/doctor.cjs",
+    "pretest:live": "node scripts/doctor.cjs",
+    "predeploy": "npm run check",
+    "postdeploy": "npm run doctor:live"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",

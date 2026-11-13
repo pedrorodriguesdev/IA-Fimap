@@ -95,7 +95,7 @@ test('Worker continua lendo eventos de raciocínio até chegar texto visível', 
   ]
   const env = { FINANCIAL_TOOLS_ENABLED: 'false', CHAT_RATE_LIMITER: { limit: async () => ({ success: true }) }, AI: { run: async () => new ReadableStream({ pull(c) {
     if (packets.length) c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(packets.shift())}\n\n`))
-    else c.close()
+    else { c.enqueue(new TextEncoder().encode('data: [DONE]\n\n')); c.close() }
   } }) } }
   const response = await context.module.exports.default.fetch(new Request('https://test/v1/ia/chat-publico', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'Oi' }] }) }), env)
   let timer

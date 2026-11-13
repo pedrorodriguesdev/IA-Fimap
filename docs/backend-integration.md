@@ -1,6 +1,6 @@
 # Guia 1 — Integração do front, back-end e chat da IA
 
-Este documento explica o funcionamento atual e o trabalho necessário no aplicativo principal. Leia também o [Guia 2 — Recomendações automáticas](recomendacoes-automaticas.md).
+Este documento explica o funcionamento atual e o trabalho necessário no aplicativo principal. As recomendações automáticas citadas aqui são uma proposta futura; não existe um segundo guia neste repositório.
 
 **Referência do código: 12/11/2026.** Os exemplos não dependem de Express, Nest, Django ou outro framework específico. Os caminhos `/api/...` são uma proposta para o seu back-end; não existem neste repositório. O Worker e as rotas `/v1/ia/chat` e `/v1/ia/chat-publico` já existem.
 
@@ -20,7 +20,7 @@ Nenhuma integração garante ausência total de falhas. A implementação deve d
 | Rotas do aplicativo, histórico e idempotência | Precisam ser implementados no back-end |
 | Controle do Worker por usuário autenticado | Precisa ser implementado; hoje os limites são por IP |
 | Recebimento estruturado de dados financeiros | Não implementado; o contrato atual utiliza apenas `messages` |
-| Recomendações automáticas em JSON | Não implementadas; projeto descrito no Guia 2 |
+| Recomendações automáticas em JSON | Não implementadas; dependem de projeto futuro |
 
 Na última verificação da publicação, a rota privada retornou `503` porque `CHAT_API_TOKEN` não estava configurado. Isso é um registro da verificação, não uma consulta permanente ao ambiente. Confirme novamente ao integrar.
 
@@ -331,7 +331,7 @@ Não faça retry automático depois de já mostrar parte de uma resposta, anexan
 - Propagar cancelamento e encerrar leitores de rede em `finally`.
 - Renderizar Markdown com sanitização; conteúdo da IA e de páginas externas não é HTML confiável.
 - Registrar IDs de correlação, estados, tempos, código de falha e contagens. Não registrar Bearer, secrets, extrato integral ou prompt financeiro em logs operacionais.
-- O logger financeiro atual registra contagens de ferramentas/requisições/cache/falhas; não oferece rastreabilidade completa de negócio nem histórico persistente.
+- O logger financeiro registra nomes conhecidos das ferramentas, sucesso/código de erro e contagens de requisições/cache/falhas; não oferece rastreabilidade completa de negócio nem histórico persistente.
 
 ## 10. Roteiro de implementação e testes de aceite
 
@@ -383,4 +383,4 @@ Para explicar no chat uma recomendação já salva, o back-end primeiro autoriza
 
 - [Secrets na Cloudflare](https://developers.cloudflare.com/workers/configuration/secrets/): configuração privada das credenciais.
 - [Streams nos Workers](https://developers.cloudflare.com/workers/runtime-apis/streams/): implementação de fluxos de resposta.
-- [Guia 2 — Recomendações automáticas](recomendacoes-automaticas.md): arquitetura e contratos propostos para análises de dados financeiros.
+- [Auditoria de 13/11/2026](audit-2026-11-13.md): histórico, causas verificadas e prevenção.

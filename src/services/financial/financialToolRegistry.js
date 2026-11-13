@@ -114,7 +114,7 @@ function createRegistry(env = {}, options = {}) {
         // Central, depois aplica a última taxa nos dias úteis que foram informados.
         const cdi = await bcb.serie({ codigo: 12 })
         const taxa = cdi.dados.pontos.at(-1).valor
-        const bruto = calc.investment({ capital: a.capital, taxaPercentual: taxa * a.percentualCDI / 100, periodos: a.diasUteis })
+        const bruto = calc.investment({ capital: a.capital, taxaPercentual: taxa * a.percentualCDI / 100, periodos: a.diasUteis }, 2520)
         return { tipo: 'simulacao_cdi', fonte: cdi.fonte, dataReferencia: cdi.dataReferencia, consultadoEm: cdi.consultadoEm, desatualizado: cdi.desatualizado, dados: { taxaDiariaPercentual: taxa, ...bruto, liquido: a.aliquotaIRPercentual === undefined || a.aliquotaIOFPercentual === undefined ? null : calc.netReturn({ capital: a.capital, valorFinalBruto: bruto.valorFinalBruto, aliquotaIRPercentual: a.aliquotaIRPercentual, aliquotaIOFPercentual: a.aliquotaIOFPercentual }) }, observacoes: ['Último CDI diário repetido em todos os dias úteis: projeção hipotética, não previsão da trajetória do CDI. Não representa taxa de um produto contratado.', 'Retorno líquido indisponível sem alíquotas de IR e IOF confirmadas.'] }
     })
     // Chamada pelo orchestrator somente depois que a IA pediu uma ferramenta.

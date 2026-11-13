@@ -12,6 +12,7 @@ Requer Node.js 22.14 ou superior e uma conta Cloudflare com Workers AI habilitad
 
 ```sh
 npm ci
+npm run doctor
 npx wrangler login
 npm run dev
 ```
@@ -21,9 +22,7 @@ Copie `.dev.vars.example` para `.dev.vars` e preencha `AI_PROVIDER_ACCOUNT_ID` e
 ## Publicar
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+npm run check
 npm run deploy
 ```
 
@@ -54,6 +53,23 @@ O front usa o próprio domínio. Se hospedar o front em outro domínio, ajuste `
 | `docs/backend-integration.md` | Integração com o back-end principal |
 
 Há uma única configuração de publicação e uma única entrada web: `wrangler.jsonc` e `src/worker.ts`.
+
+## Diagnóstico e troca da conta de IA
+
+Uma cópia nova do Git não inclui `node_modules`. Execute `npm ci` uma vez nesta cópia e novamente quando o lockfile mudar. Instalar dependências locais não publica o site, não renova cota e não altera secrets.
+
+- `npm run doctor`: verifica Node.js e as dependências locais, sem chamar a IA.
+- `npm run doctor:live`: faz uma pergunta real ao site e exige resposta completa; consome cota. Aceita outra base: `npm run doctor:live -- https://SEU-WORKER.workers.dev`.
+- `npm run ai:configure`: pede o Account ID e o token em um terminal interativo (token oculto), testa o modelo na conta fornecida e só então envia os dois secrets juntos ao Worker. Uma falha de formato, autenticação, acesso ou cota impede essa substituição.
+- `npm run check`: executa TypeScript, testes e bundle sem publicar. Também roda automaticamente antes de `npm run deploy`.
+
+Mantenha o Wrangler conectado à conta que hospeda `ia-fimap`. O Account ID e o token informados em `ai:configure` são da conta que fornece a IA, com permissões Workers AI Read/Edit. Não use e-mail, Zone ID, nome/ID do token, aspas ou prefixo Bearer no lugar dos valores. O token precisa ter acesso à conta indicada.
+
+`/health` verifica somente o formato da configuração. HTTP 200 e `iaConfigurada: true` não confirmam autenticação ou cota. `doctor:live` verifica esses pontos naquele momento. Depois de um deploy, o diagnóstico real roda automaticamente: se falhar, o deploy pode já estar ativo e precisa ser investigado, sem presumir rollback automático.
+
+O fluxo do GitHub em `.github/workflows/check.yml` verifica Linux/Windows e testa a interface em Windows; não publica nem usa secrets. Os testes automáticos locais usam respostas controladas. Os comandos com `live` e o configurador usam a IA real.
+
+Leia a [auditoria de 13/11/2026](docs/audit-2026-11-13.md) para as evidências do incidente e os limites desta prevenção.
 
 ## Como a pergunta vira uma resposta com dados de API
 
@@ -94,7 +110,7 @@ As rotas novas recebem `{ "messages": [{ "role": "user", "content": "Olá" }] }`
 
 A rota privada retorna 503 enquanto `CHAT_API_TOKEN` não estiver configurado, e 401 quando o token estiver ausente/incorreto. O chat público funciona independentemente dessa configuração.
 
-No Worker publicado, cadastre a conta provedora com `npx wrangler secret put AI_PROVIDER_ACCOUNT_ID` e `npx wrangler secret put AI_PROVIDER_API_TOKEN`. `/health` indica `provedorIA: "conta-externa"` quando esse modo está selecionado. Credenciais incompletas ou recusadas e cota esgotada não acionam a conta Fimap como alternativa. A cota diária gera HTTP 429 com mensagem própria; o token nunca é entregue ao navegador.
+No Worker publicado, prefira `npm run ai:configure` para validar e enviar o par de credenciais junto. Os comandos individuais `wrangler secret put` continuam disponíveis, mas aplicam cada secret separadamente e não testam o acesso ao modelo. `/health` indica `provedorIA: "conta-externa"` quando esse modo está selecionado. Credenciais incompletas ou recusadas e cota esgotada não acionam a conta Fimap como alternativa. A cota diária gera HTTP 429 com mensagem própria; o token nunca é entregue ao navegador.
 
 Somente pares de mensagens completos entram no contexto seguinte. Falhas, cancelamentos, respostas vazias, SSE malformado e conexões encerradas antes de `fim` são tratados como incompletos. O adaptador Node também aceita o SSE legado do provedor.
 
@@ -132,6 +148,8 @@ Leia [como conectar o back-end](docs/backend-integration.md). Login, dados autor
 As chaves de produção ficam nos secrets do Worker; para desenvolvimento, use `.dev.vars`. As variáveis do back-end separado estão documentadas no guia de integração. Não publique segredos em `public/`. Credenciais que já apareceram no histórico Git precisam ser rotacionadas nos serviços correspondentes.
 
 
-Configuracao para usar Token de outra conta
-npx wrangler secret put AI_PROVIDER_ACCOUNT_ID
-npx wrangler secret put AI_PROVIDER_API_TOKEN
+Para trocar a conta provedora com validação prévia:
+```sh
+npm run ai:configure
+npm run doctor:live
+```

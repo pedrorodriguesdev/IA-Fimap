@@ -1,9 +1,9 @@
 const v = require('./validation')
 const { error } = require('./httpClient')
 const money = value => { if (!Number.isFinite(value) || Math.abs(value) > 1e15) throw error('RESULTADO_FORA_DO_LIMITE'); return Math.round((value + Number.EPSILON) * 100) / 100 }
-function investment({ capital, taxaPercentual, periodos, aporte = 0 }) {
+function investment({ capital, taxaPercentual, periodos, aporte = 0 }, maxPeriods = 1200) {
     v.number(capital, 'capital', 0, 1e10); v.number(taxaPercentual, 'taxaPercentual', -99, 100)
-    v.integer(periodos, 'periodos', 1, 1200); v.number(aporte, 'aporte', 0, 1e8)
+    v.integer(periodos, 'periodos', 1, maxPeriods); v.number(aporte, 'aporte', 0, 1e8)
     const rate = taxaPercentual / 100
     const growth = Math.pow(1 + rate, periodos)
     const final = capital * growth + aporte * (rate === 0 ? periodos : Math.expm1(periodos * Math.log1p(rate)) / rate)

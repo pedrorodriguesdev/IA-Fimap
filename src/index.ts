@@ -3,6 +3,7 @@ import systemPrompt from './ai-system-prompt.js';
 import financialChat from './services/financial/financialChatOrchestrator.js';
 import protocol from './services/chatProtocol.js';
 import aiProvider from './services/aiProvider.js';
+import aiModel from './ai-model.js';
 
 export type Env = {
   AI?: Ai;
@@ -19,7 +20,7 @@ export type Env = {
   FINANCIAL_MAX_WEB_SEARCHES?: string;
   TAVILY_HTTP_TIMEOUT_MS?: string;
 };
-const MODEL = '@cf/google/gemma-4-26b-a4b-it';
+const { MODEL } = aiModel;
 const lastRequest = new Map<string, number>();
 let lastCleanup = Date.now();
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
@@ -44,7 +45,7 @@ export default {
     };
     if (!originAllowed) return json({ mensagem: 'Origem não autorizada.' }, 403);
     if (url.pathname === '/health' && request.method === 'GET') {
-      return json({ online: true, service: 'ia-fimap', iaConfigurada: aiProvider.isAiConfigured(env), configuracaoIA: aiProvider.configurationStatus(env), provedorIA: aiProvider.usesExternalAccount(env) ? 'conta-externa' : 'conta-do-worker', model: MODEL });
+      return json({ online: true, service: 'ia-fimap', iaConfigurada: aiProvider.isAiConfigured(env), configuracaoIA: aiProvider.configurationStatus(env), verificacaoIA: 'somente-formato', provedorIA: aiProvider.usesExternalAccount(env) ? 'conta-externa' : 'conta-do-worker', model: MODEL });
     }
     const publicRoute = url.pathname === '/v1/ia/chat-publico';
     const privateRoute = url.pathname === '/v1/ia/chat';

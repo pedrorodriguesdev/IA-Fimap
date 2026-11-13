@@ -110,3 +110,12 @@ test('Worker continua após metadados finais sem texto em pacotes separados', { 
   assert.match(body, /"tipo":"fim"/)
   assert.doesNotMatch(body, /"tipo":"erro"/)
 })
+
+test('Worker não transforma resposta cortada do provedor em conclusão', async () => {
+  for (const suffix of ['\n\n', '']) {
+    const body = await new Response(createPublicStream(source('data: {"response":"Texto parcial"}' + suffix))).text()
+    assert.match(body, /Texto parcial/)
+    assert.match(body, /"tipo":"erro"/)
+    assert.doesNotMatch(body, /"tipo":"fim"/)
+  }
+})

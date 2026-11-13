@@ -41,7 +41,7 @@ function configuration(env) {
     const external = usesExternalAccount(env)
     const account = typeof env.AI_PROVIDER_ACCOUNT_ID === 'string' ? env.AI_PROVIDER_ACCOUNT_ID.trim() : ''
     const token = typeof env.AI_PROVIDER_API_TOKEN === 'string' ? env.AI_PROVIDER_API_TOKEN.trim() : ''
-    const ready = external ? /^[a-f0-9]{32}$/i.test(account) && Boolean(token) && !/[\r\n]/.test(token) : typeof env.AI?.run === 'function'
+    const ready = external ? /^[a-f0-9]{32}$/i.test(account) && Boolean(token) && !/[\s"'\\]/.test(token) && !/^Bearer$/i.test(token) : typeof env.AI?.run === 'function'
     return { external, account, token, ready }
 }
 

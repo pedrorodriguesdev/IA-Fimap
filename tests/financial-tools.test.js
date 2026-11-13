@@ -310,7 +310,7 @@ test('Worker integra seleção nativa, consulta e resposta SSE nas duas rotas de
                 final++
                 assert.ok(input.messages.some(row => row.role === 'tool'))
                 assert.ok(input.messages.some(row => row.content === 'E a Selic hoje?'))
-                return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('data: {"response":"Taxa consultada no Banco Central."}\n\n')); c.close() } })
+                return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('data: {"response":"Taxa consultada no Banco Central."}\n\ndata: [DONE]\n\n')); c.close() } })
             } }
         }
         const response = await context.module.exports.default.fetch(new Request('https://test' + path, { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ messages: [{ role: 'assistant', content: 'Falamos sobre juros.' }, { role: 'user', content: 'E a Selic hoje?' }] }) }), env)
@@ -373,4 +373,26 @@ test('respostas malformadas e instruções de URL no plano não executam consult
     assert.equal(JSON.parse(outputs.find(row => row.role === 'tool').content).erro, 'ARGUMENTO_NAO_PERMITIDO')
     const client = createClient({ FINANCIAL_HTTP_RETRIES: '0' }, { fetchImpl: async () => new Response('x'.repeat(1000001)) })
     await assert.rejects(client.get('brasilapi', '/api/banks/v1/1'), { code: 'RESPOSTA_GRANDE' })
+})
+
+test('simulação CDI suporta o prazo diário aceito sem ampliar o limite mensal geral', async () => {
+    const tools = registry(() => json([{ data: brDate, valor: '0.05' }]))
+    const result = await tools.execute('simularInvestimentoCDI', { capital: 1000, percentualCDI: 100, diasUteis: 2520 })
+    assert.ok(Math.abs(result.dados.valorFinalBruto - calc.money(1000 * 1.0005 ** 2520)) < 0.01)
+    await assert.rejects(tools.execute('simularInvestimentoCDI', { capital: 1000, percentualCDI: 100, diasUteis: 2521 }), { code: 'PARAMETRO_INVALIDO:diasUteis' })
+    assert.throws(() => calc.investment({ capital: 1000, taxaPercentual: 0.05, periodos: 1201 }), { code: 'PARAMETRO_INVALIDO:periodos' })
+})
+
+test('logs identificam ferramenta e resultado sem argumentos ou dados consultados', async () => {
+    const logs = []
+    let round = 0
+    await prepareFinancialMessages(messages, {}, async () => round++ === 0
+        ? plan(args('localizarEndereco', { endereco: 'Endereco privado que nao deve ir aos logs' }), args('consultarCDI', {})) : plan(),
+        { fetchImpl: async () => json([{ data: brDate, valor: '0.05' }]), logger: data => logs.push(data) })
+    const summary = logs.find(item => item.evento === 'financial_tools')
+    assert.deepEqual(summary.execucoes, [
+        { ferramenta: 'localizarEndereco', ok: false, codigo: 'CHAVE_AUSENTE' },
+        { ferramenta: 'consultarCDI', ok: true }
+    ])
+    assert.doesNotMatch(JSON.stringify(logs), /Endereco privado|0\.05|token|Bearer/)
 })
